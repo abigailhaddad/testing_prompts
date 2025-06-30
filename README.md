@@ -49,6 +49,8 @@ Edit [`config.json`](config.json) to:
 2. Update [`config.json`](config.json) column names and response values
 3. Run the notebook
 
+**Note:** This repo includes a small sample (50 rows) of the IMDB dataset that we use to demonstrate the functionality. For the full 50,000 movie reviews, download from [Kaggle](https://www.kaggle.com/datasets/lakshmi25npathi/imdb-dataset-of-50k-movie-reviews).
+
 ## LiteLLM
 
 This uses [LiteLLM](https://docs.litellm.ai/docs/completion/structured_outputs) for API calls, which lets you swap between providers (OpenAI, Anthropic, etc.) by changing the model name in config.json.
