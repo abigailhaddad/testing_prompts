@@ -2,32 +2,28 @@
 # Each function takes explicit paths and configurations for maximum flexibility
 
 import json
+import os
 import pandas as pd
 from typing import Dict, List
+from pathlib import Path
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from litellm import completion
 from pydantic import create_model
 from enum import Enum
 from datetime import datetime
+from great_tables import GT
 
 def load_environment(env_path: str = ".env"):
     """
-    Load environment variables from specified .env file
+    Load environment variables from specified .env file.
     
     Args:
         env_path: Path to .env file (default: ".env")
         
-    Markdown comment:
-    ## Step 1: Setup Environment
-    This loads your API keys from the .env file. 
-    
-    **To use different env file:** Change env_path parameter
-    **Required variables:** OPENAI_API_KEY (and others based on your models)
+    Notes:
+        Required variables: OPENAI_API_KEY, ANTHROPIC_API_KEY, or other model-specific keys
     """
-    import os
-    from pathlib import Path
-    
     # Check if .env file exists
     if not Path(env_path).exists():
         print(f"❌ ERROR: {env_path} file not found!")
@@ -63,7 +59,7 @@ def load_environment(env_path: str = ".env"):
 
 def load_configuration(config_path: str) -> Dict:
     """
-    Load prompts, models, and output format configuration
+    Load prompts, models, and output format configuration.
     
     Args:
         config_path: Path to JSON config file
@@ -71,18 +67,12 @@ def load_configuration(config_path: str) -> Dict:
     Returns:
         Dictionary with full configuration
         
-    Markdown comment:
-    ## Step 2: Load Configuration
-    This reads your complete setup from a JSON config file.
-    
-    **Config structure:**
-    - `data_settings`: Column names and sample size
-    - `output_format`: Response field name and valid enum values  
-    - `prompts`: List of prompt templates to test
-    - `models`: List of model names to use
-    - `temperatures`: List of temperature values to test
-    
-    **To modify:** Edit your config JSON file
+    Config structure:
+        - data_settings: Column names and sample size
+        - output_format: Response field name and valid enum values  
+        - prompts: List of prompt templates to test
+        - models: List of model names to use
+        - temperatures: List of temperature values to test
     """
     with open(config_path, 'r') as f:
         config = json.load(f)
@@ -98,7 +88,7 @@ def load_configuration(config_path: str) -> Dict:
 
 def create_response_model(config: Dict):
     """
-    Dynamically create Pydantic model based on config
+    Dynamically create Pydantic model based on config.
     
     Args:
         config: Configuration dictionary with output_format section
@@ -106,12 +96,9 @@ def create_response_model(config: Dict):
     Returns:
         Pydantic model class for structured output
         
-    Markdown comment:
-    ## Step 3: Create Response Model
-    This creates a Pydantic model based on your config's enum values.
-    
-    **Dynamic creation:** The enum and model are built from your config file
-    **Structured output:** Ensures LLMs return exactly the format you want
+    Notes:
+        Creates enum and model dynamically from config values to ensure
+        LLMs return responses in the exact format specified.
     """
     # Create enum from config
     enum_values = config['output_format']['enum_values']
@@ -128,7 +115,7 @@ def create_response_model(config: Dict):
 
 def load_dataset(data_path: str, config: Dict) -> pd.DataFrame:
     """
-    Load and sample dataset based on configuration
+    Load and sample dataset based on configuration.
     
     Args:
         data_path: Path to CSV file with your data
@@ -137,13 +124,9 @@ def load_dataset(data_path: str, config: Dict) -> pd.DataFrame:
     Returns:
         DataFrame with sampled data
         
-    Markdown comment:
-    ## Step 4: Load Dataset
-    This loads your labeled data using the column names from config.
-    
-    **Required:** CSV file with text and label columns (names from config)
-    **Sampling:** Evenly samples from each class based on config sample_size
-    **To use different data:** Just change the data_path parameter
+    Notes:
+        Requires CSV file with text and label columns specified in config.
+        Samples evenly from each class based on config sample_size.
     """
     df = pd.read_csv(data_path)
     
@@ -173,7 +156,7 @@ def load_dataset(data_path: str, config: Dict) -> pd.DataFrame:
 
 def create_tasks(config: Dict, samples: pd.DataFrame) -> List[Dict]:
     """
-    Create all combinations of prompts, models, temperatures, and samples
+    Create all combinations of prompts, models, temperatures, and samples.
     
     Args:
         config: Configuration dictionary
@@ -182,13 +165,9 @@ def create_tasks(config: Dict, samples: pd.DataFrame) -> List[Dict]:
     Returns:
         List of task dictionaries ready for execution
         
-    Markdown comment:
-    ## Step 5: Create Task List
-    This creates every combination of:
-    - Each prompt × Each model × Each temperature × Each sample
-    
-    **Total tasks:** prompts × models × temperatures × samples
-    **Each task contains:** All info needed to run one LLM call
+    Notes:
+        Creates every combination of prompts × models × temperatures × samples.
+        Each task contains all information needed to run one LLM call.
     """
     tasks = []
     text_col = config['data_settings']['text_column']
@@ -200,11 +179,10 @@ def create_tasks(config: Dict, samples: pd.DataFrame) -> List[Dict]:
                 for idx, row in samples.iterrows():
                     tasks.append({
                         'sample_id': idx,
-                        'text_snippet': str(row[text_col])[:100] + "...",
+                        'text': row[text_col],
                         'true_label': row[label_col],
                         'prompt_id': prompt_config['id'],
                         'prompt_template': prompt_config['prompt'],
-                        'full_text': row[text_col],
                         'model': model,
                         'temperature': temperature
                     })
@@ -213,7 +191,7 @@ def create_tasks(config: Dict, samples: pd.DataFrame) -> List[Dict]:
 
 def tasks_to_dataframe(config: Dict, samples: pd.DataFrame) -> pd.DataFrame:
     """
-    Create tasks DataFrame with all combinations
+    Create tasks DataFrame with all combinations.
     
     Args:
         config: Configuration dictionary
@@ -222,11 +200,8 @@ def tasks_to_dataframe(config: Dict, samples: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with all task combinations that will be executed
         
-    Markdown comment:
-    ## Step 5: Create Tasks DataFrame
-    This creates a DataFrame showing all task combinations that will be run.
-    
-    **Clean output:** Returns structured data for display in notebook
+    Notes:
+        Returns structured data with summary statistics as DataFrame attributes.
     """
     tasks = create_tasks(config, samples)
     tasks_df = pd.DataFrame(tasks)
@@ -242,7 +217,7 @@ def tasks_to_dataframe(config: Dict, samples: pd.DataFrame) -> pd.DataFrame:
 
 def run_single_prompt(task: Dict, response_model, response_field: str) -> Dict:
     """
-    Execute a single prompt task with structured output
+    Execute a single prompt task with structured output.
     
     Args:
         task: Task dictionary with prompt, model, and data
@@ -252,20 +227,10 @@ def run_single_prompt(task: Dict, response_model, response_field: str) -> Dict:
     Returns:
         Result dictionary with prediction and metadata
         
-    Markdown comment:
-    ## Step 6: Run Individual Prompts
-    This function:
-    1. Fills in the prompt template with the text
-    2. Calls the LLM with structured output
-    3. Extracts the prediction from the structured response
-    
-    **Key feature:** Uses Pydantic structured output for clean results!
+    Notes:
+        Uses Pydantic structured output to ensure consistent response format.
     """
-    # Truncate very long text to avoid token limits
-    text = str(task['full_text'])
-    if len(text) > 2000:
-        text = text[:2000] + "..."
-    
+    text = str(task['text'])
     prompt = task['prompt_template'].replace('{text}', text)
     
     try:
@@ -273,7 +238,6 @@ def run_single_prompt(task: Dict, response_model, response_field: str) -> Dict:
             model=task['model'],
             messages=[{"role": "user", "content": prompt}],
             temperature=task['temperature'],
-            max_tokens=50,
             response_format=response_model
         )
         
@@ -287,7 +251,7 @@ def run_single_prompt(task: Dict, response_model, response_field: str) -> Dict:
     
     return {
         'sample_id': task['sample_id'],
-        'text_snippet': task['text_snippet'],
+        'text': task['text'],
         'true_label': task['true_label'],
         'prompt_id': task['prompt_id'],
         'model': task['model'],
@@ -298,7 +262,7 @@ def run_single_prompt(task: Dict, response_model, response_field: str) -> Dict:
 
 def run_all_tasks(tasks: List[Dict], config: Dict, max_workers: int = 4) -> List[Dict]:
     """
-    Execute all tasks in parallel using configuration
+    Execute all tasks in parallel using configuration.
     
     Args:
         tasks: List of task dictionaries
@@ -308,13 +272,9 @@ def run_all_tasks(tasks: List[Dict], config: Dict, max_workers: int = 4) -> List
     Returns:
         List of results from all tasks
         
-    Markdown comment:
-    ## Step 7: Run All Tasks in Parallel
-    This runs all your prompt combinations using parallel processing.
-    
-    **Performance:** Adjust max_workers based on API rate limits
-    **Progress:** Shows real-time completion status
-    **Error handling:** Failed tasks are captured with error messages
+    Notes:
+        Adjust max_workers based on API rate limits.
+        Shows real-time progress and captures failed tasks with error messages.
     """
     # Create response model from config
     response_model = create_response_model(config)
@@ -346,7 +306,7 @@ def run_all_tasks(tasks: List[Dict], config: Dict, max_workers: int = 4) -> List
                 # Add error result
                 results.append({
                     'sample_id': task['sample_id'],
-                    'text_snippet': task['text_snippet'],
+                    'text': task['text'],
                     'true_label': task['true_label'],
                     'prompt_id': task['prompt_id'],
                     'model': task['model'],
@@ -360,7 +320,7 @@ def run_all_tasks(tasks: List[Dict], config: Dict, max_workers: int = 4) -> List
 
 def save_results(results: List[Dict], output_path: str = "results") -> str:
     """
-    Save results to CSV file
+    Save results to CSV file.
     
     Args:
         results: List of result dictionaries
@@ -369,12 +329,8 @@ def save_results(results: List[Dict], output_path: str = "results") -> str:
     Returns:
         Path to the saved CSV file
         
-    Markdown comment:
-    ## Step 8: Save Results
-    Saves results as CSV with timestamp.
-    
-    **CSV:** Human-readable, works with Excel/Google Sheets
-    **Timestamped:** Won't overwrite previous runs
+    Notes:
+        Saves as timestamped CSV file to prevent overwriting previous runs.
     """
     df = pd.DataFrame(results)
     
@@ -384,12 +340,13 @@ def save_results(results: List[Dict], output_path: str = "results") -> str:
     
     # Save file
     df.to_csv(csv_path, index=False)
+    print(f"📁 Results saved to: {csv_path}")
     
     return csv_path
 
 def results_summary_dataframe(results: List[Dict]) -> pd.DataFrame:
     """
-    Create a summary DataFrame of results with key metrics
+    Create a summary DataFrame of results with key metrics.
     
     Args:
         results: List of result dictionaries
@@ -415,15 +372,14 @@ def results_summary_dataframe(results: List[Dict]) -> pd.DataFrame:
 
 def create_results_table(results: List[Dict]):
     """
-    Create and return a great-tables GT object for notebook display
+    Create and return a great-tables GT object for display.
     
     Args:
         results: List of result dictionaries
     
     Returns:
-        GT table object that displays nicely in notebooks
+        GT table object formatted for display
     """
-    from great_tables import GT
     
     df = pd.DataFrame(results)
     summary_data = []
@@ -476,7 +432,7 @@ def create_results_table(results: List[Dict]):
 
 def quick_analysis(results: List[Dict]) -> pd.DataFrame:
     """
-    Generate a quick accuracy summary
+    Generate a quick accuracy summary.
     
     Args:
         results: List of result dictionaries
@@ -484,16 +440,10 @@ def quick_analysis(results: List[Dict]) -> pd.DataFrame:
     Returns:
         DataFrame with accuracy by prompt/model/temperature
         
-    Markdown comment:
-    ## Step 9: Quick Analysis
-    Shows which combinations work best.
-    
-    **Look for:**
-    - Which prompts perform better?
-    - How does temperature affect accuracy?
-    - Are there significant model differences?
+    Notes:
+        Analyzes which prompt/model/temperature combinations perform best.
+        Saves results as HTML table and prints text summary.
     """
-    from great_tables import GT
     
     df = pd.DataFrame(results)
     summary_data = []
@@ -558,7 +508,7 @@ def run_experiment(config_path: str, data_path: str,
                   env_path: str = ".env", output_path: str = "results",
                   max_workers: int = 4) -> tuple:
     """
-    Run complete experiment with specified paths
+    Run complete experiment with specified paths.
     
     Args:
         config_path: Path to JSON configuration file
@@ -570,20 +520,12 @@ def run_experiment(config_path: str, data_path: str,
     Returns:
         Tuple of (results_list, summary_dataframe, saved_file_path)
         
-    Markdown comment:
-    ## Run Complete Experiment
-    This function chains all steps together with custom paths.
-    
-    **Usage:**
-    ```python
-    results, summary, file_path = run_experiment(
-        config_path="my_config.json",
-        data_path="my_data.csv",
-        output_path="my_results"
-    )
-    ```
-    
-    **For notebooks:** Use individual functions above for step-by-step control
+    Example:
+        results, summary, file_path = run_experiment(
+            config_path="my_config.json",
+            data_path="my_data.csv",
+            output_path="my_results"
+        )
     """
     print("🚀 Starting modular prompt testing experiment")
     print("=" * 50)
