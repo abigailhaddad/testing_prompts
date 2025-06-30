@@ -1,0 +1,30 @@
+{
+  "data_settings": {
+    "text_column": "review",
+    "label_column": "sentiment",
+    "sample_size": 10
+  },
+  "output_format": {
+    "response_field": "sentiment",
+    "enum_values": ["positive", "negative"]
+  },
+  "prompts": [
+    {
+      "id": "sentiment_basic",
+      "prompt": "Classify this movie review as either positive or negative: '{text}'"
+    },
+    {
+      "id": "sentiment_instruction",
+      "prompt": "Read the following movie review and determine if it's positive or negative.\n\nReview: '{text}'"
+    },
+    {
+      "id": "sentiment_bad",
+      "prompt": "hey is this good or bad idk: '{text}'"
+    }
+  ],
+  "models": [
+    "gpt-4o-mini",
+    "claude-3-haiku-20240307"
+  ],
+  "temperatures": [0.0, 0.7]
+}
